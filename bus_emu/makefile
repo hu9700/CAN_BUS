@@ -1,21 +1,21 @@
 FILE_LIST:=$(shell ls -C)
 SRC_LIST:=$(filter %.c, ${FILE_LIST})
 OBJ_LIST:=$(patsubst %.c,%.o,${SRC_LIST})
-OUT_FILE:=can_emu.out
+OBJ_FOLDER:=object
 CC_FLAG:=-c
 CC:=gcc
 
-all:${OUT_FILE}
+all:${OBJ_FOLDER}
 
-${OUT_FILE}:${OBJ_LIST}
-	${CC} -o $@ $<
+${OBJ_FOLDER}:${OBJ_LIST}
+	(test ! -d ${OBJ_FOLDER} && mkdir ${OBJ_FOLDER});rm -f ${OBJ_FOLDER}/$<;mv $< ${OBJ_FOLDER}/
 
 ${OBJ_LIST}:%.o:%.c
 	${CC} ${CC_FLAG} $<
 
 .PHONY:clean cleanall all
 clean:
-	-rm ${OBJ_LIST}
+	-rm -f ${OBJ_LIST};rm -r -f ${OBJ_FOLDER}/
 cleanall:
-	-rm ${OBJ_LIST} ${OUT_FILE}
+	-rm -f ${OBJ_LIST};rm -r -f ${OBJ_FOLDER}/
 
