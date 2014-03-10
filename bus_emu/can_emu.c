@@ -13,8 +13,8 @@
 #include "../include/poll_select.h"
 #include <fcntl.h>
 
-static char bus_path[PATH_MAX];
-static char nodes_path[PATH_MAX];
+//static char bus_path[PATH_MAX];
+static char nodes_path[PATH_MAX];//node_n_r is read by client, node_n_w is written by client
 
 static char * get_image_path(pid_t pid, char *proc_dir_buff, size_t size)//sizeof proc_dir_buff should be PATH_MAX
 {
@@ -123,44 +123,14 @@ static int check_file(int node_num)
 		}
 		
 		if(rval == 0)
-		{//check bus folder and nodes folder exist
-			DIR *bus_dir = NULL;
+		{//checknodes folder exist
 			DIR *nodes_dir = NULL;
 			
-			memcpy(bus_folder, process_image_folder, sizeof(bus_folder));
 			memcpy(nodes_folder, process_image_folder, sizeof(nodes_folder));
 			
-			strncat(bus_folder, "bus/", sizeof(bus_folder));
 			strncat(nodes_folder, "nodes/", sizeof(nodes_folder));
 			
-			bus_dir = opendir(bus_folder);
 			nodes_dir = opendir(nodes_folder);
-			
-			if(bus_dir == NULL)
-			{
-				perror("check bus_dir");
-				if(errno == ENOENT)
-				{
-					rval = mkdir(bus_folder, 0777);
-					if(rval == 0)
-					{
-						printf("mkdir %s", bus_folder);
-					}
-					else
-					{
-						perror("make bus folder");
-					}
-				}
-				else
-				{
-					rval = -1;
-				}
-			}
-			else
-			{
-				printf("exist %s\n", bus_folder);
-				closedir(bus_dir);
-			}
 			
 			if(nodes_dir == NULL)
 			{
@@ -189,98 +159,94 @@ static int check_file(int node_num)
 			}
 			
 			if(rval == 0)		
-			{//check nodes and bus files
-				char bus_file[PATH_MAX];
-				DIR *bus_dir = NULL;
-				memcpy(bus_file, bus_folder, sizeof(bus_file));
-				strncat(bus_file, "bus", sizeof(bus_file));
-				bus_dir = opendir(bus_file);
-				if(bus_dir == NULL)
+			{//check nodes files node_n_r and node_n_w
+				//check node file
+				int count = 0;
+				char nodes_file_read[PATH_MAX];
+				char nodes_file_write[PATH_MAX];
+				
+				for(count = 0; count < node_num; count ++)
 				{
-					perror("bus file");
-					if(errno == ENOENT)
+					DIR *nodes_dir = NULL;
+					memset(nodes_file_read, 0, sizeof(nodes_file));
+					memset(nodes_file_write, 0, sizeof(nodes_file));
+					snprintf(nodes_file_read, sizeof(nodes_file), "%snode_%d_r", nodes_folder, count);
+					snprintf(nodes_file_write, sizeof(nodes_file), "%snode_%d_w", nodes_folder, count);
+					
+					//try to open node_n_r
+					nodes_dir = opendir(nodes_file_read);
+					if(nodes_dir == NULL)
 					{
-						rval = mknod(bus_file, S_IFREG, 0);
-						if(rval == 0)
+						perror("check nodes file");
+						if(errno == ENOENT)
 						{
-							printf("make bus file\n");
-							chmod(bus_file, 0666);
+							rval = mknod(nodes_file_read, S_IFIFO, 0);
+							if(rval == 0)
+							{
+								printf("make node_%d_r file\n", count);
+								chmod(nodes_file_read, 0666);
+							}							
+							else
+							{
+								perror("make nodes");
+							}
 						}
 						else
 						{
-							perror("make bus file");
-						}
+							rval = -1;
+						}						
 					}
 					else
 					{
-						rval = -1;
+						printf("exist %s\n", nodes_file_read);
+						closedir(nodes_dir);
 					}
-				}
-				else
-				{
-					printf("exist %s\n", bus_file);
-					closedir(bus_dir);
-				}
-				
-				if(rval == 0)
-				{//check node file
-					int count = 0;
-					char nodes_file[PATH_MAX];
 					
-					for(count = 0; count < node_num; count ++)
+					//try to open node_n_w
+					nodes_dir = NULL;
+					nodes_dir = opendir(nodes_file_write);
+					if(nodes_dir == NULL)
 					{
-						DIR *nodes_dir = NULL;
-						memset(nodes_file, 0, sizeof(nodes_file));
-						snprintf(nodes_file, sizeof(nodes_file), "%snode_%d", nodes_folder, count);
-						nodes_dir = opendir(nodes_file);
-						if(nodes_dir == NULL)
+						perror("check nodes file");
+						if(errno == ENOENT)
 						{
-							perror("check nodes file");
-							if(errno == ENOENT)
+							rval = mknod(nodes_file_write, S_IFIFO, 0);
+							if(rval == 0)
 							{
-								rval = mknod(nodes_file, S_IFIFO, 0);
-								if(rval == 0)
-								{
-									printf("make nodes_%d file\n", count);
-									chmod(nodes_file, 0666);
-								}							
-								else
-								{
-									perror("make nodes");
-								}
-							}
+								printf("make node_%d_w file\n", count);
+								chmod(nodes_file_write, 0666);
+							}							
 							else
 							{
-								rval = -1;
-							}						
+								perror("make nodes");
+							}
 						}
 						else
 						{
-							printf("exist %s\n", nodes_file);
-							closedir(nodes_dir);
-						}
-					}//loop to check nodes file
-				}
+							rval = -1;
+						}						
+					}
+					else
+					{
+						printf("exist %s\n", nodes_file_write);
+						closedir(nodes_dir);
+					}					
+				}//loop to check nodes file	
 			}
 		}
 	}
 	
 	if(rval == 0)
 	{
-		memset(bus_path, 0, sizeof(bus_path));
+//		memset(bus_path, 0, sizeof(bus_path));
 		memset(nodes_path, 0, sizeof(nodes_path));
-		snprintf(bus_path, sizeof(bus_path), "%sbus", bus_folder);
-		snprintf(nodes_path, sizeof(nodes_path), "%snode_", nodes_folder);
+//		snprintf(bus_path, sizeof(bus_path), "%sbus", bus_folder);
+		snprintf(nodes_path, sizeof(nodes_path), "%s", nodes_folder);
 	}
 	
 	return rval;
 }
 
-static int sort_frame_by_id(struct can_frame_attr *frame_list, int list_size)
-{
-	int rval = 0;
-	
-}
 
 //int main(int argc, char **argv)
 int start_can_emu(int node_num)
@@ -311,7 +277,8 @@ int start_can_emu(int node_num)
 			int fifo_fdwrite_list[node_num];
 			int bus_fd;
 			int count;
-			char node_dir[PATH_MAX];
+			char node_read_dir[PATH_MAX];
+			char node_write_dir[PATH_MAX];
 			
 			fd_set read_set;
 			fd_set write_set;
@@ -325,10 +292,12 @@ int start_can_emu(int node_num)
 			
 			for(count = 0; count < node_num; count ++)
 			{//open all the node
-				memcpy(node_dir, nodes_path, sizeof(node_dir));
-				snprintf(node_dir, sizeof(node_dir), "%snode_%d", node_dir, count);
-				fifo_fdread_list[count] = open(node_dir, O_RDONLY);
-
+				memcpy(node_read_dir, nodes_path, sizeof(node_read_dir));
+				memcpy(node_write_dir, nodes_path, sizeof(node_write_dir));
+				snprintf(node_read_dir, sizeof(node_read_dir), "%snode_%d_r", node_read_dir, count);
+				snprintf(node_write_dir, sizeof(node_write_dir), "%snode_%d_w", node_write_dir, count);
+				
+				fifo_fdread_list[count] = open(node_write_dir, O_RDONLY);
 				if(fifo_fdread_list[count] != 0)
 				{
 					fcntl(fifo_fdread_list[count], F_SETFL, O_NONBLOCK);
@@ -341,7 +310,7 @@ int start_can_emu(int node_num)
 					break;
 				}
 				
-				fifo_fdwrite_list[count] = open(node_dir, O_WRONLY);				
+				fifo_fdwrite_list[count] = open(node_read_dir, O_WRONLY);				
 				if(fifo_fdwrite_list[count] != 0)
 				{
 					fcntl(fifo_fdwrite_list[count], F_SETFL, O_NONBLOCK);
