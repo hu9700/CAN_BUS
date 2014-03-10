@@ -9,11 +9,14 @@
 #include <string.h>
 #include <fcntl.h>//mknod
 #include "../include/can_bus.h"
+#include "../include/can_emu.h"
+#include "../include/poll_select.h"
+#include <fcntl.h>
 
 static char bus_path[PATH_MAX];
 static char nodes_path[PATH_MAX];
 
-char * get_image_path(pid_t pid, char *proc_dir_buff, size_t size)//sizeof proc_dir_buff should be PATH_MAX
+static char * get_image_path(pid_t pid, char *proc_dir_buff, size_t size)//sizeof proc_dir_buff should be PATH_MAX
 {
 	char *process_dir = NULL;
 	int count = 0;
@@ -57,7 +60,7 @@ char * get_image_path(pid_t pid, char *proc_dir_buff, size_t size)//sizeof proc_
 	return process_dir;
 }
 
-int arg_handler(int argc, char **argv)
+static int arg_handler(int argc, char **argv)
 {
 	int node_num = 0;
 		
@@ -71,7 +74,7 @@ int arg_handler(int argc, char **argv)
 	}
 }
 
-int check_file(int node_num)
+static int check_file(int node_num)
 {//check node file, check bus file
 	char process_image_dir[PATH_MAX];
 	char bus_folder[PATH_MAX];
@@ -273,6 +276,12 @@ int check_file(int node_num)
 	return rval;
 }
 
+static int sort_frame_by_id(struct can_frame_attr *frame_list, int list_size)
+{
+	int rval = 0;
+	
+}
+
 //int main(int argc, char **argv)
 int start_can_emu(int node_num)
 {
@@ -304,16 +313,122 @@ int start_can_emu(int node_num)
 			int count;
 			char node_dir[PATH_MAX];
 			
-			memset(fifo_list, 0, sizeof(int) * node_num);
+			fd_set read_set;
+			fd_set write_set;
+			fd_set except_set;			
+			
+			memset(fifo_fdread_list, 0, sizeof(int) * node_num);
+			memset(fifo_fdwrite_list, 0, sizeof(int) * node_num);
+			clean_fdset(&read_set);
+			clean_fdset(&write_set);
+			clean_fdset(&except_set);
 			
 			for(count = 0; count < node_num; count ++)
-			{
+			{//open all the node
 				memcpy(node_dir, nodes_path, sizeof(node_dir));
 				snprintf(node_dir, sizeof(node_dir), "%snode_%d", node_dir, count);
 				fifo_fdread_list[count] = open(node_dir, O_RDONLY);
-				fifo_fdwrite_list[count] = open(node_dir, O_WRONLY);
+
+				if(fifo_fdread_list[count] != 0)
+				{
+					fcntl(fifo_fdread_list[count], F_SETFL, O_NONBLOCK);
+					addfd_fdset(&read_set, fifo_fdread_list[count]);
+				}
+				else
+				{
+					perror("fall to open node readonly");
+					rval = -1;
+					break;
+				}
+				
+				fifo_fdwrite_list[count] = open(node_dir, O_WRONLY);				
+				if(fifo_fdwrite_list[count] != 0)
+				{
+					fcntl(fifo_fdwrite_list[count], F_SETFL, O_NONBLOCK);
+					//addfd_fdset(&write_set, fifo_fdwrite_list[count]);
+				}
+				else
+				{
+					perror("fall to open node writeonly");
+					rval = -1;
+					break;
+				}
 			}
-		}
+			
+			if(rval != 0)
+			{//error happened to open node
+				for(count = 0; count < node_num; count ++)
+				{
+					if(fifo_fdread_list[count] != 0)
+					{
+						close(fifo_fdread_list[count]);	
+					}
+					
+					if(fifo_fdwrite_list[count] != 0)
+					{
+						close(fifo_fdwrite_list[count]);	
+					}					
+				}
+			}
+			else
+			{//node is opened successfully
+				int ready = 0;
+				int avialable_list[node_num];
+				int avialable_num = 0;
+				
+				while(1)
+				{
+					ready = select(fifo_fdread_list[node_num - 1] + 1, &read_set, /*&write_set*/NULL, NULL, NULL);
+					avialable_num = 0;
+					
+					if(ready < 0)
+					{
+						perror("select error;");
+						rval = ready;
+						break;
+					}
+					else					
+					{
+						for(count = 0; count < node_num; count ++)
+						{//get all the avialable node
+							if(isfd_fdset(&read_set, fifo_fdread_list[count]))
+							{
+								avialable_list[avialable_num] = count;
+								avialable_num ++;
+							}
+						}
+						
+						if(avialable_num <= 0)
+						{
+							printf("select problem\n");
+							rval = -1;
+						}
+						else
+						{//here we assume every frame is in a correct form
+							struct can_frame_attr can_frame[avialable_num];
+							int result = 0;
+							
+							for(count = 0; count < avialable_num; count ++)
+							{
+								result = read(fifo_fdread_list[count], can_frame + count, sizeof(struct can_frame_attr));
+								
+								if(result < sizeof(struct can_frame_attr))
+								{
+									printf("can frame size wrong\n");
+									rval = -1;
+									break;
+								}
+							}
+							
+							if(rval == 0)
+							{//sort all the received frame by can id
+								
+							}//all can frame got
+						}//
+					}//return from select
+				}//loop to receive and send can frame
+			}
+		}//open fifo
 	}//file system created
 	
 	return rval;
